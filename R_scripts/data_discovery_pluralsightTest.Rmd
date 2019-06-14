@@ -1,0 +1,333 @@
+---
+title: "Data Discovery"
+subtitle: "Pluralsight Data Scientist Take-Home Exercise"
+author: "Trenton Pulsipher"
+date: "`r lubridate::today()`"
+output: html_document
+---
+
+
+```{r settings, echo = F, warning = F, message = F, error = F}
+knitr::opts_chunk$set(
+  echo = F,
+  message = F,
+  warning = F,
+  error = F,
+  fig.height = 3,
+  fig.width = 9.5,
+  cache = F
+)
+
+# Libraries 
+library(lubridate)
+library(stopwords)
+library(tidyverse)
+library(trelliscopejs)
+library(wordcloud)
+library(HSPSUtils) # install_github("HSPS-DataScience/HSPSUtils")
+                   # devtools::update_packages("HSPSUtils")
+library(rbokeh)
+library(ggpubr)
+```
+
+
+```{r dataIn}
+# Read in Data
+data <- read_csv("~/Documents/Development/R/data/ancestryTest/take-home_exercise_data.csv") %>%
+  select(-X1) %>%
+  rename(customer_type_grp = customer_type_group)
+
+# fix the mislabeled regtenure 20 day group
+data$regtenure[data$regtenure == "<=20 day"] <- "<=20 days"
+```
+
+
+## Initial Look at Data
+
+### Dataset 
+
+Below are 100 randomly selected rows from the dataset. 
+
+```{r dataTable}
+create_datetable <- function(data) {
+  ## data table
+  DT::datatable(
+    data %>%
+      sample_n(100),
+      options = list(
+        pageLength = 5,
+        searching = T,
+        scrollX = T
+      )
+    )
+}
+create_datetable(data)
+```
+
+
+### Data Summary
+
+The table below shows several metrics calculated against the various columns/variables. These metrics include: the number of unique values, number of NAs, the maximum value, the minimum value, and the mean/average.
+```{r dataSummary}
+create_data_summary <- function(data) {
+  # convert column names for use here
+  names(data) <- str_replace_all(names(data), "_", ".")
+
+  # Data Summary
+  data_summary <- data %>%
+    # select_if(is.numeric) %>%
+    summarise_all(funs(
+      numUnique = length(unique(.)),
+      nas = sum(is.na(.)),
+      max = max(., na.rm = T),
+      min = min(., na.rm = T),
+      mean = mean(., na.rm = T))) %>%
+    gather() %>%
+    separate(key, c("key", "stat"), sep = "_") %>%
+    spread(key, value)
+  # generate datatable from summary
+  DT::datatable(
+    data_summary,
+    options = list(
+      pageLength = 5,
+      searching = T,
+      scrollX = T
+    )
+  )
+}
+create_data_summary(data)
+```
+
+
+### Categorical Variables in Bar Charts
+
+A quick look at counts of the various levels of the categorical variables found in the data is shown in the following set of bar charts. [Trelliscopejs](https://hafen.github.io/trelliscopejs/) is an R package that enables one to quickly sort and/or filter through various slices of their previously generated visualizations/plots of their data. In one case we may want to look through all levels of the variable, `dna_visittrafficsubtype` (I don't show that here). To do this we simply create a generic plot, apply only one slice/level/subset (subtype) at a time to the plot, and create any features that might help us learn about the effects of `dna_visittrafficsubtype` on the data. We can then sort and filter through the feature set to find anomalies or interesting behaviors that might influence modeling or help us understand the relationship between variables in the data. 
+
+For this dataset the number of categorical variables is not overwhelming so the power of trelliscope may appear limited. However, when one needs to quickly move through 100s, 1000s or even millions of slices of the data, trelliscope provides a seemless interface to manage so many subsets of data and better discover interesting features.
+```{r catBarCharts, fig.height = 8}
+create_bar_chart_categorical_trelli <- function(data) {
+    data %>%
+    # selection of categorical variables isn't automated yet
+      select(xsell_gsa, regtenure, customer_type_grp, daystogetresult_grp, 
+             dna_visittrafficsubtype) %>%
+      gather_group_by_count() %>%
+      ungroup() %>%
+    ggplot(aes(x = value, y = Count)) +
+      geom_bar(stat = "identity", alpha = 0.5) +
+      geom_text(aes(label = scales::comma(Count))) +
+      theme_bw() +
+      coord_flip() +
+      labs(x = "", y = "") +
+      # facet_wrap(~key, scales = "free")
+      facet_trelliscope(~ key,
+                        scales = "free",
+                        self_contained = T,
+                        width = 600,
+                        name = "categoricalVariables",
+                        group = "vars",
+                        desc = "All Variables of Type Character or Factor")
+}
+create_bar_chart_categorical_trelli(data)
+```
+
+
+### Numeric Variables in Histograms
+
+The only numeric variable, `xsell_day_exact`, is highly skewed so a log transformation better shows the distribution of values.
+```{r numHistograms}
+create_hist_numeric <- function(data) {
+  ## histogram of all numeric variables
+  data %>%
+    select(xsell_day_exact) %>%
+    # select_if(is.numeric) %>%
+    # .select_non_id_columns() %>%
+    gather() %>%
+    filter(value >= 0) %>%
+  ggplot(aes(x = value)) +
+    geom_histogram(binwidth = .25, bins = 30) +
+    scale_y_continuous(labels = scales::comma) +
+    scale_x_log10(breaks = c(0.1, 1, 10, 100, 1000, 10000),
+                  labels = c(0.1, 1, 10, 100, 1000, 10000)) +
+    facet_wrap(~ key, scales = "free", ncol = 3) +
+    theme_bw()
+}
+create_hist_numeric(data)
+```
+
+
+### Time Series Variables
+
+As noted in the section below, outliers and NAs make it difficult to initially see the trends over time of these two time series related variables.
+```{r ts1, fig.height = 4}
+create_time_series <- function(data, title) {
+  # time series
+  data %>%
+    select_if(is.Date) %>%
+    gather_group_by_count() %>%
+    ungroup() %>%
+    figure(xlab = "", title = title) %>%
+      ly_points(x = value, y = Count,
+               hover = list(
+                 Date = value, Count = Count
+               ))
+  # ggplot(aes(x = value, y = Count)) +
+  #   geom_line() +
+  #   geom_smooth(method = "loess") +
+  #   theme_bw() +
+  #   facet_wrap(~ key, scales = "free") + 
+  #   labs(x = "")
+}
+create_time_series(data %>% select(ordercreatedate), title = "ordercreatedate")
+```
+
+```{r ts2, fig.height = 4}
+create_time_series(data %>% select(dnatestactivationdayid), title = "dnatestactivationdayid")
+```
+
+
+## Outliers and Notes
+
+* ID variables
+    + ```r data %>% group_by(prospectid) %>% mutate(Count = n()) %>% filter(Count > 1) %>% pull(prospectid) %>% unique() %>% length() %>% scales::comma()``` `prospectid`s appear multiple times, accounting for ```r data %>% group_by(prospectid) %>% mutate(Count = n()) %>% filter(Count > 1) %>% pull(prospectid) %>% length() %>% scales::comma()``` rows in the dataset.
+* Categorical variables
+    + `dna_visittrafficsubtype` has roughly 15 non-NA subtypes over 2000, meaning many subtypes contain very few (for some it's almost no) observations in this dataset. May prefer to combine subtypes later.
+    + Treating `xsell_gsa` as categorical.
+* Numeric variables
+    + `xsell_day_exact` appears to have a funky distribution, quite log looking. However, the histogram does ignore any zero values, which is roughly ```r round((data %>% select(xsell_day_exact) %>% filter(xsell_day_exact == 0) %>% count()) / ((data %>% select(xsell_day_exact) %>% filter(xsell_day_exact == 0) %>% count()) + (data %>% select(xsell_day_exact) %>% filter(xsell_day_exact != 0) %>% count())), 3) * 100```% of the values for that variable. May want to look at a cummulative view of some kind.
+* Time series variables
+    + `ordercreatedate` has a date of `r data %>% select(ordercreatedate) %>% filter(ordercreatedate < "2000-01-01") %>% slice(1) %>% pull()` repeated `r data %>% select(ordercreatedate) %>% filter(ordercreatedate < "2000-01-01") %>% count() %>% pull()` times in the dataset. (Suggest removing these from the dataset.)
+    + `dnatestactivationdayid` has `r round((data %>% select(dnatestactivationdayid) %>% filter(is.na(dnatestactivationdayid)) %>% count()) / (data %>% select(dnatestactivationdayid) %>% count()), 3) * 100 `% of the values as NA.
+
+
+### Categorial Variable Notes
+
+A closer look at `dna_visittrafficsubtype` shows that many of the subtypes are rarely found in this dataset. Grouping or combining these in a meaningful manner may help, but unfortunately I doubt I have sufficient information or experience to group the levels of this variable at this time.
+```{r tblVisitTraffic}
+DT::datatable(
+  data %>% 
+        group_by(dna_visittrafficsubtype) %>% 
+        summarise(Count = n()) %>% 
+        mutate(
+          
+          Percent = 100 * (Count / sum(Count))
+        ) %>% 
+        arrange(desc(Percent)),
+  options = list(
+    pageLength = 10,
+    searching = T,
+    scrollX = T
+  )
+)
+```
+
+I must not understand the `regtenure` column yet. I would have assumed that `regtenure` was just a categorical view of `xsell_day_exact`. From the histograms below I must be missing something and those two variables are not linked in any way.
+```{r histExactVsRegtenure, fig.height = 4}
+data %>% 
+  filter(ordercreatedate > "2000-01-01") %>% 
+    mutate(regtenure = factor(regtenure, 
+                              levels = c("No Reg Date", "Order prior to reg",
+                                         "<=10 days", "<=20 days", "<=30 days",
+                                         "<=60 days", "<=90 days", "<=120 days",
+                                         "More than 120 days old"))) %>%
+  ggplot(aes(x = xsell_day_exact)) + 
+    geom_histogram() + 
+    theme_bw() + 
+    facet_wrap(~regtenure, scales = "free")
+```
+
+
+### Time Series Variables (improved)
+
+After removing the outlier dates (noted above) for `ordercreatedate` we can better see the general trend. Though really to see that trend one would need to zoom into the main group of data (not include the high points from last year's sale around Thanksgiving). In fact, after zooming in to see that general positive sloped trend one notices several days of observations that are very low and warrant further consideration (March 21-30, 2018).
+```{r tsImproved1, fig.height = 4}
+create_time_series(data %>% 
+                     filter(
+                       ordercreatedate > "2000-01-01",
+                       !is.na(dnatestactivationdayid)
+                     ) %>%
+                     select(ordercreatedate)
+                   , title = "ordercreatedate")
+```
+
+After removing the NAs from `dnatestactivationdayid` we can better see the general trend.
+```{r tsImproved2, fig.height = 4}
+create_time_series(data %>% 
+                     filter(
+                       ordercreatedate > "2000-01-01",
+                       !is.na(dnatestactivationdayid)
+                     ) %>%
+                     select(dnatestactivationdayid)
+                   , title = "dnatestactivationdayid")
+```
+
+
+
+### Cross-sell Percentage
+
+##### Daily Trend
+
+Variance appears to tighten up in 2016-2017 and the obvious drop in late 2016 to 2017 will cause problems for most models. Forecasting or predicting using the full dataset could prove difficult if the model isn't able to account for the sudden drop (which most models cannot adequately account for the drop). The drop is also temporary, meaning it will always exist at the end of the time series because cross-sell conversion requires time before it matures to the real number. Recent orders purchased (say in the last week, or end of the time series) will have a very low percent of cross-sells, because most of the cross-sells require more time to occur. A few weeks/months later that cross-sell percentage will have increased dramatically. In short, modeling the cross-sell percentage will always have this limitation (recent drop) and one would have to overcome that by weighting past observations higher than the most recent (very tricky) or more likely one would just model up to the "mature" portion of the cross-sell percentage. I can think of several ways to use the drop information in modeling but that would be a very academic exercise and not necessarily improve the overall prediction - it may however speed up reaction to any changes in cross-sell conversion.
+
+```{r dailyPct}
+data %>%
+  filter(ordercreatedate > "2000-01-01") %>%
+  group_by(ordercreatedate) %>%
+  mutate(
+    xsell_120rule = if_else(xsell_day_exact <= 120, 1, 0),
+    xsell = if_else(xsell_120rule & xsell_gsa, 1, 0)
+  ) %>%
+  summarise(PercentConverted = sum(xsell) / length(xsell)) %>%
+  ggplot(aes(x = ordercreatedate, y = PercentConverted)) +
+    geom_point(alpha = 0.25) +
+    scale_y_continuous(limits = c(0,1), 
+                       breaks = seq(0,1,by=.2), 
+                       labels = paste0(seq(0,1,by=.2)*100, "%")) +
+    theme_bw() +
+    labs(x = "", y = "Percent",
+         title = "Percent of DNA Orders Created Converted to Xsell")
+```
+
+A more detailed view of this daily xsell conversion may help us understand what is influencing this behavior and how that might affect model construction. I only show it broken out by the customer type group. 
+
+```{r dailyPctByVars1, fig.height = 4}
+# dailyPctByVar <- function(data, facetVar) {
+#   data %>%
+#     filter(ordercreatedate > "2000-01-01") %>%
+#     group_by(ordercreatedate, one_of(facetVar)) %>%
+#     mutate(
+#       xsell_120rule = if_else(xsell_day_exact <= 120, 1, 0),
+#       xsell = if_else(xsell_120rule & xsell_gsa, 1, 0)
+#     ) %>%
+#     summarise(PercentConverted = sum(xsell) / length(xsell)) %>%
+#     ggplot(aes(x = ordercreatedate, y = PercentConverted)) +
+#     geom_point(alpha = 0.25) +
+#     scale_y_continuous(breaks = seq(0,1,by=.2), labels = paste0(seq(0,1,by=.2)*100, "%")) +
+#     facet_wrap(~ one_of(facetVar)) +
+#     theme_bw() +
+#     labs(x = "", y = "Percent",
+#          title = "Percent of DNA Orders Created Converted to Xsell")
+# }
+# dailyPctByVar(data, facetVar = "customer_type_group")
+
+  data %>%
+    filter(ordercreatedate > "2000-01-01") %>%
+    group_by(ordercreatedate, customer_type_grp) %>%
+    mutate(
+      xsell_120rule = if_else(xsell_day_exact <= 120, 1, 0),
+      xsell = if_else(xsell_120rule & xsell_gsa, 1, 0)
+    ) %>%
+    summarise(PercentConverted = sum(xsell) / length(xsell)) %>%
+    ggplot(aes(x = ordercreatedate, y = PercentConverted)) +
+    geom_point(alpha = 0.25) +
+    scale_y_continuous(limits = c(0,1), 
+                       breaks = seq(0,1,by=.2), 
+                       labels = paste0(seq(0,1,by=.2)*100, "%")) +
+    facet_grid(customer_type_grp ~ .) +
+    theme_bw() +
+    theme(strip.text.y = element_text(angle = 0)) +
+    labs(x = "", y = "Percent",
+         title = "Percent of DNA Orders Created Converted to Xsell")
+```
+
+
+
