@@ -13,7 +13,8 @@ con <- DBI::dbConnect(RSQLite::SQLite(), "pluralsightTestDB.sqlite3")
 
 # read in data from the four database tables
 question_details <- DBI::dbReadTable(con, "question_details") %>% 
-  as_tibble()
+  as_tibble() %>%
+  mutate(date_created = as.POSIXct(as.numeric(date_created), origin = '1970-01-01', tz = "GMT"))
 
 question_interactions <- DBI::dbReadTable(con, "question_interactions") %>% 
   as_tibble() %>%
@@ -21,7 +22,10 @@ question_interactions <- DBI::dbReadTable(con, "question_interactions") %>%
 
 user_assessment_sessions <- DBI::dbReadTable(con, "user_assessment_sessions") %>% 
   as_tibble() %>%
-  mutate(date_created = ymd_hms(date_created))
+  mutate(
+    date_created = ymd_hms(date_created),
+    date_modified = ymd_hms(date_modified)
+  )
 
 user_interactions <- DBI::dbReadTable(con, "user_interactions") %>% 
   as_tibble() %>%

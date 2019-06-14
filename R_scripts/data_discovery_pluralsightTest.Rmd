@@ -41,7 +41,8 @@ con <- DBI::dbConnect(RSQLite::SQLite(), "~/Documents/Development/R/pluralsightT
 
 # read in data from the four database tables
 question_details <- DBI::dbReadTable(con, "question_details") %>% 
-  as_tibble()
+  as_tibble() %>%
+  mutate(date_created = as.POSIXct(as.numeric(date_created), origin = '1970-01-01', tz = "GMT"))
 
 question_interactions <- DBI::dbReadTable(con, "question_interactions") %>% 
   as_tibble() %>%
@@ -120,7 +121,7 @@ A quick look at counts of the various levels of the categorical variables found 
 
 For this dataset the number of categorical variables is not overwhelming so the power of trelliscope would appear limited. However, when one needs to quickly move through 100s, 1000s or even millions of slices of the data, trelliscope provides a seemless interface to manage so many subsets of data and better discover interesting features.
 
-```{r catBarCharts, fig.height = 4}
+```{r catBarCharts1, fig.height = 4}
 create_bar_chart_categorical_trelli <- function(data) {
     data %>%
     # selection of categorical variables isn't automated yet
@@ -172,7 +173,7 @@ create_hist_numeric(user_assessment_sessions)
 ### Time Series Variables
 
 As noted in the section below, outliers and NAs make it difficult to initially see the trends over time of these two time series related variables.
-```{r ts1, fig.height = 4, fig.width = 8}
+```{r ts1a, fig.height = 4, fig.width = 8}
 create_time_series <- function(data, title) {
   # time series
   data %>%
@@ -190,8 +191,131 @@ create_time_series(user_assessment_sessions %>% select(date_created) %>% rename(
                    title = "user_assessment_sessions date_created")
 ```
 
-```{r ts2, fig.height = 4, fig.width = 8}
+```{r ts1b, fig.height = 4, fig.width = 8}
 create_time_series(user_assessment_sessions %>% select(date_modified) %>% rename(date = date_modified), 
                    title = "user_interactions date_modified")
 ```
 
+
+
+---
+
+# user_interactions
+
+Below are 100 randomly selected rows from the dataset. 
+
+```{r dataTable2}
+create_datetable(user_interactions)
+```
+
+
+### Data Summary
+
+```{r dataSummary2}
+create_data_summary(user_interactions)
+```
+
+
+<!-- ### Categorical Variables in Bar Charts -->
+
+<!-- ```{r catBarCharts2, fig.height = 4} -->
+<!-- create_bar_chart_categorical_trelli(user_interactions) -->
+<!-- ``` -->
+
+
+### Numeric Variables in Histograms
+
+```{r numHistograms2, fig.height = 7}
+create_hist_numeric(user_interactions)
+```
+
+
+### Time Series Variables
+
+```{r ts2a, fig.height = 4, fig.width = 8}
+create_time_series(user_interactions %>% select(date_created) %>% rename(date = date_created), 
+                   title = "user_interactions date_created")
+```
+
+
+---
+
+# question_details
+
+Below are 100 randomly selected rows from the dataset. 
+
+```{r dataTable3}
+create_datetable(question_details)
+```
+
+
+### Data Summary
+
+```{r dataSummary3}
+create_data_summary(question_details)
+```
+
+
+### Categorical Variables in Bar Charts
+
+```{r catBarCharts3, fig.height = 4}
+create_bar_chart_categorical_trelli(question_details)
+```
+
+
+<!-- ### Numeric Variables in Histograms -->
+
+<!-- ```{r numHistograms3, fig.height = 7} -->
+<!-- create_hist_numeric(question_details) -->
+<!-- ``` -->
+
+
+### Time Series Variables
+
+
+```{r ts3, fig.height = 4, fig.width = 8}
+create_time_series(question_details %>% select(date_created) %>% rename(date = date_created), 
+                   title = "question_details date_created")
+```
+
+
+---
+
+# question_interactions
+
+Below are 100 randomly selected rows from the dataset. 
+
+```{r dataTable4}
+create_datetable(question_interactions)
+```
+
+
+### Data Summary
+
+```{r dataSummary4}
+create_data_summary(question_interactions)
+```
+
+
+### Categorical Variables in Bar Charts
+
+```{r catBarCharts4, fig.height = 4}
+create_bar_chart_categorical_trelli(question_interactions %>% select(-date_created))
+```
+
+
+### Numeric Variables in Histograms
+
+```{r numHistograms4, fig.height = 7}
+create_hist_numeric(question_interactions %>% 
+                      mutate(client_elapsed_time_log = log10(client_elapsed_time))
+                    )
+```
+
+
+### Time Series Variables
+
+```{r ts4, fig.height = 4, fig.width = 8}
+create_time_series(question_interactions %>% select(date_created) %>% rename(date = date_created), 
+                   title = "question_interactions date_created")
+```
