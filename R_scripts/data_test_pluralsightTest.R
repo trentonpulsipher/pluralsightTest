@@ -47,6 +47,11 @@ d <- user_assessment_sessions %>%
     date_created_interation = date_created.y
   ) %>%
   left_join(question_interactions %>%
+              rename(
+                result_questions = result,
+                ranking_questions = ranking,
+                rd_questions = rd
+              ) %>%
               left_join(question_details, by = "item_content_id") %>%
               rename(
                 date_created = date_created.x,

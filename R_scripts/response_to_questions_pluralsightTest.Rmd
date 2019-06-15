@@ -1,0 +1,167 @@
+---
+title: "Pluralsight Data Scientist Take-Home Exercise"
+subtitle: "Response to Questions"
+author: "Trenton Pulsipher"
+date: "`r lubridate::today()`"
+output: html_document
+---
+
+```{r setup, echo = F, warning = F, message = F, error = F}
+knitr::opts_chunk$set(
+  echo = F,
+  message = F,
+  warning = F,
+  error = F,
+  fig.height = 3,
+  fig.width = 9.5,
+  cache = F
+)
+
+# Libraries 
+library(DBI)
+library(RSQLite)
+library(lubridate)
+library(stopwords)
+library(tidyverse)
+library(trelliscopejs)
+library(wordcloud)
+library(HSPSUtils) # install_github("HSPS-DataScience/HSPSUtils")
+                   # devtools::update_packages("HSPSUtils")
+library(rbokeh)
+library(ggpubr)
+```
+
+
+```{r dataIn, echo = F, warning = F, message = F, error = F}
+# connect the database created by running .sql file in TablePlus
+con <- DBI::dbConnect(RSQLite::SQLite(), "~/Documents/Development/R/pluralsightTest/pluralsightTestDB.sqlite3")
+
+# read in data from the four database tables
+question_details <- DBI::dbReadTable(con, "question_details") %>% 
+  as_tibble() %>%
+  mutate(date_created = as.POSIXct(as.numeric(date_created), origin = '1970-01-01', tz = "GMT"))
+
+question_interactions <- DBI::dbReadTable(con, "question_interactions") %>% 
+  as_tibble() %>%
+  mutate(date_created = ymd_hms(date_created))
+
+user_assessment_sessions <- DBI::dbReadTable(con, "user_assessment_sessions") %>% 
+  as_tibble() %>%
+  mutate(
+    date_created = ymd_hms(date_created),
+    date_modified = ymd_hms(date_modified)
+  )
+
+user_interactions <- DBI::dbReadTable(con, "user_interactions") %>% 
+  as_tibble() %>%
+  mutate(date_created = ymd_hms(date_created))
+
+## Join the data together
+d <- user_assessment_sessions %>%
+  left_join(user_interactions, by = "user_assessment_session_id") %>%
+  rename(
+    ranking_overall = ranking.x,
+    rd_overall = rd.x,
+    display_score_overall = display_score.x,
+    percentile_overall = percentile.x,
+    date_created_overall = date_created.x,
+    ranking_interaction = ranking.y,
+    rd_interaction = rd.y,
+    display_score_interaction = display_score.y,
+    percentile_interaction = percentile.y,
+    date_created_interation = date_created.y
+  ) %>%
+  left_join(question_interactions %>%
+              rename(
+                result_questions = result,
+                ranking_questions = ranking,
+                rd_questions = rd
+              ) %>%
+              left_join(question_details, by = "item_content_id") %>%
+              rename(
+                date_created = date_created.x,
+                date_created_question_details = date_created.y
+              )
+            , by = c("user_assessment_session_id", "user_interaction_id", "assessment_item_id", "assessment_id"))
+```
+
+
+# Data Exploration Questions
+
+### 1. Describe and visualize how the distributions of user and question rankings compare and relate between assessments.
+
+#### User Ranking Distributions
+
+###### Overall
+
+```{r q1_overall, echo = F, warning = F, message = F, error = F}
+# d %>% 
+#   group_by(user_assessment_id, user_id, user_assessment_session_id) %>%
+#   slice(1) %>%
+#   ungroup() %>%
+#   select(ends_with("overall"), n_questions_answered, -date_created_overall) %>%
+user_assessment_sessions %>%
+  select(ranking, rd, display_score, percentile) %>%
+  gather() %>%
+  ggplot(aes(x = value)) +
+    geom_density() +
+    facet_wrap(~ key, scales = "free") +
+    theme_bw()
+
+# easier way may have been to just use user_assessment_sessions
+```
+
+```{r q1_overall_byAssessment, echo = F, warning = F, message = F, error = F}
+# d %>% 
+#   group_by(user_assessment_id, user_id, user_assessment_session_id) %>%
+#   slice(1) %>%
+#   ungroup() %>%
+#   select(ends_with("overall"), n_questions_answered, -date_created_overall) %>%
+user_assessment_sessions %>%
+  select(name, ranking, rd, display_score, percentile) %>%
+  gather(,,-name) %>%
+  ggplot(aes(x = value, color = name)) +
+    geom_density() +
+    facet_wrap(~ key, scales = "free") +
+    labs(x = "", color = "Assessment") +
+    theme_bw()
+
+# easier way may have been to just use user_assessment_sessions
+```
+
+
+
+###### Interactions
+
+```{r q1_interactions, echo = F, warning = F, message = F, error = F}
+user_interactions %>% 
+  select(ranking, rd, display_score, percentile) %>%
+  gather() %>%
+  ggplot(aes(x = value)) +
+    geom_density() +
+    facet_wrap(~ key, scales = "free") +
+    theme_bw()
+
+# easier way may have been to just use user_interactions
+```
+
+
+
+
+#### Question Ranking Distributions
+
+
+### 2. How does it appear the algorithm determines when a user’s assessment session is complete?
+### 3. Which of the assessments has the highest and lowest dropout rates, respectively?
+### 4. Is there significant variance in question difficulty by topic within a given assessment?
+### 5. How many times must a question be answered before it reaches its certainty floor? Does that number appear to be constant or does it vary depending on question or assessment?
+
+
+# More Involved/Open-ended Questions
+
+### 1. Identify a metric that could be used to identify questions that are performing poorly, and consequently might need to be reviewed, changed, or removed.
+### 2. Suppose an update to Python causes a question’s answer to change, but our question authors don’t notice, and the now-outdated question remains in the test. How might that scenario reveal itself in the data?
+### 3. Given your response to number 2 in the Data Exploration Questions above, what is a method we could use to determine ideal points to stop a user’s assessment session (i.e. identify the right balance between certainty and burden on the user)?
+### 4. How could we calculate the overall difficulty level of a particular topic? How might we then calculate a topic-level score for a single user?
+
+
