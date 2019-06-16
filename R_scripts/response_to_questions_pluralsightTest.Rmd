@@ -85,6 +85,7 @@ d <- user_assessment_sessions %>%
             , by = c("user_assessment_session_id", "user_interaction_id", "assessment_item_id", "assessment_id"))
 ```
 
+The skillIQ and roleIQ tests are addictive. I haven't used Pluralsight to learn and improve my technical skills yet, but I can see how the assessments would drive interaction and frequent improvement of subscribers. What a fun way to encourage personal development.
 
 # Data Exploration Questions
 
@@ -92,7 +93,7 @@ d <- user_assessment_sessions %>%
 
 #### User Ranking Distributions
 
-###### Overall
+###### Overall Ranking Metrics
 
 ```{r q1_overall, echo = F, warning = F, message = F, error = F}
 # d %>% 
@@ -100,6 +101,7 @@ d <- user_assessment_sessions %>%
 #   slice(1) %>%
 #   ungroup() %>%
 #   select(ends_with("overall"), n_questions_answered, -date_created_overall) %>%
+## easier way may have been to just use user_assessment_sessions
 user_assessment_sessions %>%
   select(ranking, rd, display_score, percentile) %>%
   gather() %>%
@@ -107,8 +109,6 @@ user_assessment_sessions %>%
     geom_density() +
     facet_wrap(~ key, scales = "free") +
     theme_bw()
-
-# easier way may have been to just use user_assessment_sessions
 ```
 
 ```{r q1_overall_byAssessment, echo = F, warning = F, message = F, error = F}
@@ -117,6 +117,7 @@ user_assessment_sessions %>%
 #   slice(1) %>%
 #   ungroup() %>%
 #   select(ends_with("overall"), n_questions_answered, -date_created_overall) %>%
+## easier way may have been to just use user_assessment_sessions
 user_assessment_sessions %>%
   select(name, ranking, rd, display_score, percentile) %>%
   gather(,,-name) %>%
@@ -126,32 +127,100 @@ user_assessment_sessions %>%
     labs(x = "", color = "Assessment") +
     theme_bw()
 
-# easier way may have been to just use user_assessment_sessions
 ```
 
 
 
-###### Interactions
+###### Interaction Ranking Metrics
 
 ```{r q1_interactions, echo = F, warning = F, message = F, error = F}
 user_interactions %>% 
-  select(ranking, rd, display_score, percentile) %>%
-  gather() %>%
-  ggplot(aes(x = value)) +
+  left_join(user_assessment_sessions %>%
+              select(user_assessment_session_id, name), 
+            by = "user_assessment_session_id") %>%
+  select(name, ranking, rd, display_score, percentile) %>%
+  gather(,, -name) %>%
+  ggplot(aes(x = value, color = name)) +
     geom_density() +
     facet_wrap(~ key, scales = "free") +
+    labs(x = "", color = "Assessment") +
     theme_bw()
-
-# easier way may have been to just use user_interactions
 ```
-
-
 
 
 #### Question Ranking Distributions
 
+###### Question Ranking Metrics by Assessment
+
+```{r q1b_overall_byAssessment, echo = F, warning = F, message = F, error = F}
+# question_interactions %>%
+#   select(user_assessment_session_id, ranking, rd, result, client_elapsed_time) %>%
+#   left_join(user_assessment_sessions %>% select(name, user_assessment_session_id), 
+#             by = "user_assessment_session_id") %>%
+#   select(-user_assessment_session_id) %>%
+#   gather(,,-name) %>%
+#   ggplot(aes(x = value, color = name)) +
+#     geom_density() +
+#     facet_wrap(~ key, scales = "free") +
+#     labs(x = "", color = "Assessment") +
+#     theme_bw()
+
+```
+
+
 
 ### 2. How does it appear the algorithm determines when a user’s assessment session is complete?
+
+We can evaluate the algorithm's determination to stop asking questions using a time-series of each assessment. The obvious guess is a minimal threshold for question-to-question changes in the RD value. Something very similar to that guess is confirmed by observing a random sample of several `user_assessment_session_id`s.
+
+```{r q2_example_table, echo = F, warning = F, message = F, error = F}
+# user_interactions %>%
+#   filter(user_assessment_session_id == 1080045) %>% 
+#   arrange(date_create)
+```
+
+```{r q2_example_plot, echo = F, warning = F, message = F, error = F}
+q2data <- user_interactions %>%
+  # filter(user_assessment_session_id == 1080045) %>% 
+  group_by(user_assessment_session_id) %>%
+  # filter(user_assessment_session_id %in% c(1122456, 1131712, 1143004))
+  sample_n_groups(3) 
+
+q2data %>%
+  ggplot(aes(x = date_created, y = rd)) +
+    geom_point() +
+    geom_line() +
+    theme_bw() +
+    facet_wrap(~ user_assessment_session_id, scales = "free_x") + 
+    labs(x = "Time of Question", y = "Ratings Reliability or Deviation (RD)")
+```
+
+It's probably worth checking the other metrics associated with a session (`display_score`, `percentile`, and `ranking`) to confirm our suspicions regarding `rd` as the main variable driving the algorithm. Per the plots below of the same three assessment sessions we see that `rd` is the only metric of the four that seems an appropriate option.
+
+```{r q2_example_plot_multiple_metrics, echo = F, warning = F, message = F, error = F, fig.height = 6}
+q2data %>%
+  select(-user_interaction_id, -assessment_item_id) %>%
+  gather(,,-user_assessment_session_id, -date_created) %>%
+  ggplot(aes(x = date_created, y = value)) +
+    geom_point() +
+    geom_line() +
+    theme_bw() +
+    facet_grid(key ~ user_assessment_session_id, scales = "free") + 
+    labs(x = "Time of Question", y = "")
+```
+
+A closer look at the distribution of the minimum `rd` values of each assessment's interaction shows that a simple threshold of 80 drives the stopping rule. Over 75% of the sessions were stopped at a `rd` value below and very near 80. While that seems like an arbitrary value to me, I am sure there was some empirical and theoretical studies performed to determine that threshold. Also 75% may seem low, but that includes all sessions, even those that were stopped prematurely by the user (as discussed in #3).
+
+
+```{r q2_quantiles, echo = F, warning = F, message = F, error = F, fig.height = 6}
+user_interactions %>% 
+  group_by(user_assessment_session_id) %>% 
+  summarise(minRD = min(rd, na.rm = T)) %>% 
+  pull(minRD) %>% 
+  quantile(probs = seq(0, 1, len = 21))
+```
+
+
 ### 3. Which of the assessments has the highest and lowest dropout rates, respectively?
 ### 4. Is there significant variance in question difficulty by topic within a given assessment?
 ### 5. How many times must a question be answered before it reaches its certainty floor? Does that number appear to be constant or does it vary depending on question or assessment?
@@ -160,8 +229,24 @@ user_interactions %>%
 # More Involved/Open-ended Questions
 
 ### 1. Identify a metric that could be used to identify questions that are performing poorly, and consequently might need to be reviewed, changed, or removed.
+
+- Questions that render a nearly always incorrect answer, especially when the question difficulty is comparatively low. (Some questions are likely purposefully difficult so one expects those to rarely have a correct response.)
+- Questions that increase the RD metric substantially (though that may be a function of question order).
+- (thinking of a scatterplot comparing rd change due to that question vs current percentile of the user, meaning some identification of outliers occurring when rd change is high and negative and percentile was low)
+
 ### 2. Suppose an update to Python causes a question’s answer to change, but our question authors don’t notice, and the now-outdated question remains in the test. How might that scenario reveal itself in the data?
+
+Hopefully it reveals itself as often rendering an incorrect response. That may not be true of more experienced or long-time users of that technology/language so one might need to account for that somehow. I noticed a link at the bottom of the page after the answer is revealed that provided an opportunity for a situation like this to be identified.
+
 ### 3. Given your response to number 2 in the Data Exploration Questions above, what is a method we could use to determine ideal points to stop a user’s assessment session (i.e. identify the right balance between certainty and burden on the user)?
+
+I suppose you could try to account for the distribution/curve of previous assessments of that user. For example, if they have taken several assessments before the current assessment you may be able to predict/extrapolate the end score and ranking based on their position part way through the assessment.
+Taking that a step further, why not treat each step of an assessment (for a giving topic) as a modeling and prediction opportunity by developing a deep learning model trained to the eventual outcome of the assessment. That way you could use the thousands (or millions) of assessments for that topic to generate a prediction such that you could stop the assessment once the prediction has reached a certain threshold of accuracy per the model. Just to be clear I am thinking of a different deep learning model (or potentially any predictive model) for each set of questions of a given topic in order. That wasn't very clear so ... one model based on five questions answered, then a model based on six questions answered, and so on.
+
 ### 4. How could we calculate the overall difficulty level of a particular topic? How might we then calculate a topic-level score for a single user?
+
+You may get close by determining what combination of topics tend to be taken by users. If a set of users are prone to take the same five topic assessments (and rarely other topics) then you could look to see if which topic was the most difficult to that group. As an example, business analysts may consistently take the data warehousing, data analytics/visualization, SQL, and Python assessments and often struggle score lower in the Python assessment. 
+I wonder if the frequency of the topic assessed is an indicator of the difficulty. Certainly the frequency relates to the popularity and the general demand/usefulness of the topic; as well as the newness of the topic (newer tools/tech/languages may be taken less frequently - following an adoption curve). Fortran or other older languages/technologies may be considered more difficult simply because less modern learning methods exist for them.
+How is "difficult" defined here?
 
 
