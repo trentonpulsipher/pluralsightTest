@@ -222,6 +222,43 @@ user_interactions %>%
 
 
 ### 3. Which of the assessments has the highest and lowest dropout rates, respectively?
+
+
+```{r q3_scatterplot, echo = F, warning = F, message = F, error = F, fig.height = 6}
+user_assessment_sessions %>% 
+  ggplot(aes(x = n_questions_answered, y = rd)) + 
+    geom_point(alpha = 0.1) + 
+    theme_bw()
+```
+
+```{r q3_rd_threshold_table, echo = F, warning = F, message = F, error = F, fig.height = 6}
+user_assessment_sessions %>% 
+  mutate(rd_threshold = if_else(rd <= 80, 1, 0)) %>% 
+  group_by(rd_threshold) %>% 
+  summarise(n())
+```
+
+```{r q3_rd_threshold_numQs_table, echo = F, warning = F, message = F, error = F, fig.height = 6}
+user_assessment_sessions %>% 
+  mutate(rd_threshold = if_else(rd <= 80, 1, 0)) %>% 
+  group_by(rd_threshold, n_questions_answered) %>% 
+  summarise(n())
+```
+
+```{r q3_rd_distn_vs_numQs, echo = F, warning = F, message = F, error = F, fig.height = 6}
+user_assessment_sessions %>% 
+  mutate(rd_threshold = if_else(rd <= 80, 1, 0)) %>% 
+  filter(
+    #rd_threshold == 0, 
+    n_questions_answered < 30
+  ) %>% 
+  ggplot(aes(x = rd)) + 
+    geom_density() + 
+    facet_grid(n_questions_answered ~ rd_threshold, scales = "free_y") + 
+    theme_bw() + 
+    geom_vline(aes(xintercept = 80), color = "red")
+```
+
 ### 4. Is there significant variance in question difficulty by topic within a given assessment?
 ### 5. How many times must a question be answered before it reaches its certainty floor? Does that number appear to be constant or does it vary depending on question or assessment?
 
