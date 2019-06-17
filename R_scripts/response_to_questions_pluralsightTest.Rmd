@@ -260,7 +260,36 @@ user_assessment_sessions %>%
 ```
 
 ### 4. Is there significant variance in question difficulty by topic within a given assessment?
+
+
 ### 5. How many times must a question be answered before it reaches its certainty floor? Does that number appear to be constant or does it vary depending on question or assessment?
+
+I think there are `r question_interactions %>% left_join(question_details, by = "item_content_id") %>% pull(assessment_item_id) %>% unique() %>% length()` questions in the data.
+
+```{r q5_k, echo = F, warning = F, message = F, error = F, fig.height = 6}
+question_interactions %>% 
+  left_join(question_details, by = "item_content_id") %>% 
+  pull(assessment_item_id) %>% 
+  unique() %>% 
+  length()
+```
+
+```{r q5_density_all30vsNot, echo = F, warning = F, message = F, error = F, fig.height = 6}
+question_interactions %>% 
+  left_join(question_details, by = "item_content_id") %>% 
+  group_by(assessment_item_id) %>% 
+  summarise(
+    all30 = if_else(all(rd == 30), 1, 0), 
+    count = n()
+  ) %>% 
+  ggplot(aes(x = count)) + 
+    geom_density() + 
+    theme_bw() + 
+    facet_wrap(~all30, scales = "free")
+```
+
+I think I'll have to look at all 724 of these using trelliscopejs. Should be an interesting view and help me see if roughly 10 question answers is sufficient or if it's more.
+
 
 
 # More Involved/Open-ended Questions
