@@ -28,6 +28,7 @@ library(HSPSUtils) # install_github("HSPS-DataScience/HSPSUtils")
 library(rbokeh)
 library(ggpubr)
 library(matlab)
+library(kableExtra)
 ```
 
 
@@ -224,7 +225,7 @@ q2data %>%
 A closer look at the distribution of the minimum `rd` values of each assessment's interaction shows that a simple threshold of 80 drives the stopping rule. Over 75% of the sessions were stopped at a `rd` value below and very near 80. While that seems like an arbitrary value to me, I am sure there was some empirical and theoretical studies performed to determine that threshold. Also 75% may seem low, but that includes all sessions, even those that were stopped prematurely by the user (as discussed in question 3).
 
 
-```{r q2_quantiles, echo = F, warning = F, message = F, error = F, fig.height = 6}
+```{r q2_quantiles, echo = F, warning = F, message = F, error = F, eval = F}
 user_interactions %>% 
   group_by(user_assessment_session_id) %>% 
   summarise(minRD = min(rd, na.rm = T)) %>% 
@@ -301,20 +302,33 @@ question_interactions %>%
     theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
 ```
 
-The range (max - min) of question difficulty (percent correctly answered) for each Assessment:Topic combination is listed below from lowest range to highest. I didn't check the frequency of the questions or of the topics which would affect both the percent correctly answered and possibly the range of difficulty.
+The range (max - min) of question difficulty (percent correctly answered) for each Assessment:Topic combination is listed below. I didn't check the frequency of the questions or of the topics which would affect both the percent correctly answered and possibly the range of difficulty.
 
 ```{r q4_table, echo = F, warning = F, message = F, error = F}
-question_interactions %>% 
+q4_table <- question_interactions %>% 
   left_join(question_details, 
             by = "item_content_id") %>% 
   left_join(user_assessment_sessions %>% select(user_assessment_session_id, assessment_id, name), 
             by = c("user_assessment_session_id", "assessment_id")) %>%
   group_by(name, topic_name, assessment_item_id, topic_name) %>%
   summarise(percent_correct = 100*sum(result == "Correct") / length(result)) %>%
-  mutate(label = paste(name, topic_name, sep = ": ")) %>% 
-  group_by(label) %>% 
-  summarise(range = max(percent_correct)-min(percent_correct)) %>%
-  arrange(range)
+  mutate(`Assessment:Topic` = paste(name, topic_name, sep = ": ")) %>% 
+  group_by(`Assessment:Topic`, name, topic_name) %>% 
+  summarise(range = round(max(percent_correct)-min(percent_correct), 1)) %>%
+  ungroup() %>%
+  select(topic_name, range)
+
+kable(q4_table) %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = F, 
+                position = "left") %>%
+  row_spec(0, font_size = 0) %>%
+  pack_rows("Illustrator", 1, 9) %>%
+  pack_rows("Javascript", 10, 18) %>%
+  pack_rows("Unknown", 19, 19) %>%
+  pack_rows("Python", 20, 28) %>%
+  pack_rows("React", 29, 38) %>%
+  scroll_box(width="100%", height="400px")
 ```
 
 
