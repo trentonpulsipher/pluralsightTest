@@ -291,6 +291,60 @@ question_interactions %>%
 I think I'll have to look at all 724 of these using trelliscopejs. Should be an interesting view and help me see if roughly 10 question answers is sufficient or if it's more.
 
 
+```{r q5_trelliscope1, echo = F, warning = F, message = F, error = F, fig.height = 6}
+rd_not_30_assessment_ids <- question_interactions %>% 
+  group_by(assessment_item_id) %>%
+  summarise(
+    all30 = if_else(all(rd == 30), 1, 0),
+    count = n()
+  )
+
+
+question_interactions %>% 
+  left_join(question_details, by = "item_content_id") %>% 
+  rename(date_created = date_created.x) %>%
+  # add back in the summary info though not really necessary
+  left_join(rd_not_30_assessment_ids, by = "assessment_item_id") %>%
+  group_by(assessment_item_id) %>%
+  # nest as a tibble to setup for trelliscope
+  nest() %>%
+  # create feature set (cogs) and panel plot function to apply to each assessment_item_id
+  mutate(
+        cogs = map_cog(data, ~ data_frame(
+          `Max RD` = cog(max(.$rd), desc = "Max RD"),
+          `All RD values = 30` = .$all30[1],
+          `Number of Question Interactions` = .$count[1],
+          `Min Date` = cog(min(.$date_created), desc = "Min date_created"),
+          `Max Date` = cog(max(.$date_created), desc = "Max date_created"),
+          `Avg Client Elapsed Time` = cog(mean(.$client_elapsed_time), desc = "Average Client Elapsed Time"),
+          `Std Dev Client Elapsed Time` = cog(sd(.$client_elapsed_time), desc = "Standard Deviation of Client Elapsed Time"),
+          `Avg Ranking` = cog(mean(.$ranking), desc = "Average Ranking"),
+          `Pct Correct` = cog(round(100*sum(.$result == "Correct") / length(.$result), 1), desc = "Percent of Results Correct")
+        )),
+    panel = map_plot(data, ~ figure(xlab = "", ylab = "RD") %>% 
+                         ly_points(x = date_created, 
+                                   y = rd, 
+                                   alpha = .5, 
+                                   size = 8, 
+                                   color = result, 
+                                   hover = data_frame(
+                                     `Date Created` = .x$date_created, 
+                                     Ranking = .x$ranking,
+                                     RD = .x$rd, 
+                                     Result = .x$result,
+                                     `Client Elapsed Time` = .x$client_elapsed_time,
+                                     `Topic Name` = .x$topic_name), 
+                                   data = .x) %>%
+                         ly_abline(h = 30, legend = F)
+    )) %>%
+    trelliscope(name = "question_rd", 
+                group = "explore", 
+                path = "~/Documents/Development/R/trelliscope", 
+                self_contained = TRUE)
+```
+
+
+
 
 # More Involved/Open-ended Questions
 
