@@ -113,7 +113,7 @@ user_assessment_sessions %>%
     theme_bw()
 ```
 
-A comparison of the assessments is shown below. The consistency initially surprised me, but it makes sense that the distribution across the assessments varies mildly given the need to provide a standardized evaluation process agnostic to the actual assessment.
+A comparison of the assessments is shown below. The consistency initially surprised me, but it makes sense that the distribution across the assessments varies little given the need to provide a standardized evaluation process agnostic to the actual assessment.
 
 ```{r q1_overall_byAssessment, echo = F, warning = F, message = F, error = F}
 # d %>% 
@@ -159,7 +159,7 @@ user_interactions %>%
 
 The distributions of `rd` and `client_elapsed_time` are heavily skewed so I took the log (base 10) of `client_elapsed_time` and dropped `rd` altogether. Later (question 5) we see that the question based rd value is generally 30 for the majority of the question interactions. I also removed the records with outliers in the `client_elapsed_time`; values > 99th percentile = 147260.3 and values < 0.
 
-Per the plot we see that the distributions of `client_elapsed_time` for the assessments are very similar, though React is slightly shifted to the right of the other three assessments. That may be significant given it's presented on the log scale. The distributions of the `ranking` metric vary in a noisy way but still follow the same general structure.
+Per the plot we see that the distributions of `client_elapsed_time` for the assessments are very similar, though *React* is slightly shifted to the right of the other three assessments. That may be significant given it's presented on the log scale. The distributions of the `ranking` metric vary in a noisy way but still follow the same general structure.
 
 ```{r q1b_overall_byAssessment, echo = F, warning = F, message = F, error = F}
 question_interactions %>%
@@ -194,7 +194,6 @@ We can evaluate the algorithm's determination to stop asking questions using a t
 
 ```{r q2_example_plot, echo = F, warning = F, message = F, error = F}
 q2data <- user_interactions %>%
-  # filter(user_assessment_session_id == 1080045) %>% 
   group_by(user_assessment_session_id) %>%
   # filter(user_assessment_session_id %in% c(1122456, 1131712, 1143004))
   sample_n_groups(3) 
@@ -203,9 +202,10 @@ q2data %>%
   ggplot(aes(x = date_created, y = rd)) +
     geom_point() +
     geom_line() +
+    geom_hline(aes(yintercept = 80), linetype = I(3)) +
     theme_bw() +
     facet_wrap(~ user_assessment_session_id, scales = "free_x") + 
-    labs(x = "Time of Question", y = "Ratings Reliability or Deviation (RD)")
+    labs(x = "Time of Question")
 ```
 
 It's probably worth checking the other metrics associated with a session (`display_score`, `percentile`, and `ranking`) to confirm our suspicions regarding `rd` as the main variable driving the algorithm. Per the plots below of the same three assessment sessions we see that `rd` is the only metric of the four that seems an appropriate option.
@@ -222,7 +222,7 @@ q2data %>%
     labs(x = "Time of Question", y = "")
 ```
 
-A closer look at the distribution of the minimum `rd` values of each assessment's interaction shows that a simple threshold of 80 drives the stopping rule. Over 75% of the sessions were stopped at a `rd` value below and very near 80. While that seems like an arbitrary value to me, I am sure there was some empirical and theoretical studies performed to determine that threshold. Also 75% may seem low, but that includes all sessions, even those that were stopped prematurely by the user (as discussed in question 3).
+A closer look at the distribution of the minimum `rd` values of each assessment's interaction shows that a simple threshold of 80 drives the stopping rule. Over 75% of the sessions were stopped at a `rd` value below and very near 80. While 80 seems like an arbitrary value to me, there was likely some empirical and theoretical studies performed to determine that threshold. Also 75% may seem low, but that includes all sessions, even those that were stopped prematurely by the user (as discussed in question 3).
 
 
 ```{r q2_quantiles, echo = F, warning = F, message = F, error = F, eval = F}
@@ -236,7 +236,7 @@ user_interactions %>%
 
 ### 3. Which of the assessments has the highest and lowest dropout rates, respectively?
 
-Assuming the threshold for completing the assessment is 80, then the overall dropout rate is around 25% (1608/6678 = 24.07%). The dropout rates for each assessment vary substantially, including React at 34.9%, Illustrator at 32.1%, Python at 21.8%, and Javascript at 21.0%.
+Assuming the threshold for completing the assessment is 80, then the overall dropout rate is around 25% (1608/6678 = 24.07%). The dropout rates for each assessment vary substantially, specifically *React* at 34.9%, *Illustrator* at 32.1%, *Python* at 21.8%, and *Javascript* at 21.0%.
 
 ```{r q3_rd_threshold_table, echo = F, warning = F, message = F, error = F, eval = F}
 user_assessment_sessions %>% 
@@ -264,7 +264,7 @@ user_assessment_sessions %>%
     labs(x = "Number of Questions Answered", color = "Assessment")
 ```
 
-While the plot below doesn't quite tell the full story it does help illustrate that it generally takes 18-20 questions answered to obtain the `rd` threshold of 80. There is a subtle negative slope to the blue points indicating that the users who dropout early (< 10 questions) were likely incorrectly answering the majority of the few questions they actually answered. A closer look using an approach similar to how what I did in question 5 may allow us to test that hypothesis.
+While the plot below doesn't quite tell the full story it does help illustrate that it generally takes 18-20 questions answered to obtain the `rd` threshold of 80. There is a subtle negative slope to the blue points indicating that the users who dropout early (< 10 questions) were likely incorrectly answering the majority of the few questions they actually answered. A closer look using an approach similar to how what I did in question 5 may allow a full test of that hypothesis or relationship.
 
 
 ```{r q3_scatter_rdVSdisplayscore, echo = F, warning = F, message = F, error = F, fig.height = 4}
@@ -426,27 +426,29 @@ Maybe I should have used a similar approach (trelliscope) to examen the various 
 
 ### 1. Identify a metric that could be used to identify questions that are performing poorly, and consequently might need to be reviewed, changed, or removed.
 
-- Questions that render a nearly always incorrect answer, especially when the question difficulty is comparatively low. (Some questions are likely purposefully difficult so one expects those to rarely have a correct response.)
-- Questions that increase the RD metric substantially (though that may be a function of question order).
-- (thinking of a scatterplot comparing rd change due to that question vs current percentile of the user, meaning some identification of outliers occurring when rd change is high and negative and percentile was low)
+Possible ideas include:
+
+- Questions that render a nearly always incorrect answer, especially when the question difficulty is perceived to be comparatively low. (Some questions are likely purposefully difficult so one expects those to rarely have a correct response.)
+- Questions that increase the RD metric substantially (though that may be a function or influenced by question order).
+- I'm also thinking of a scatterplot comparing rd change due to that question vs current percentile of the user, meaning some identification of outliers occurring when rd change is high and negative and percentile was low.
 
 ### 2. Suppose an update to Python causes a question’s answer to change, but our question authors don’t notice, and the now-outdated question remains in the test. How might that scenario reveal itself in the data?
 
-Hopefully it reveals itself as often rendering an incorrect response. That may not be true of more experienced or long-time users of that technology/language so one might need to account for that somehow. I noticed a link at the bottom of the page after the answer is revealed that provided an opportunity for a situation like this to be identified.
+Hopefully it reveals itself as often rendering an incorrect response. That may not be true of more experienced or long-time users of that technology/language so one might need to account for that somehow. A control chart tracking the correct/incorrect response rates may help operations to catch a drift in response correctness. I also noticed a link at the bottom of the page after the answer is revealed that provided an opportunity for a situation like this to be identified.
 
 ### 3. Given your response to number 2 in the Data Exploration Questions above, what is a method we could use to determine ideal points to stop a user’s assessment session (i.e. identify the right balance between certainty and burden on the user)?
 
 You could compare the `display_score` (and ranking) to the changes/decreases in `rd` as you approach the rd threshold. Some rules or a model may be applied to allow you to occasionally shave off 3-5 questions per assessment if you sufficiently understood the relationship between `display_score` and `rd` at the late stage of the assessment.
 
-I suppose you could try to account for the distribution/curve of previous assessments of that user. For example, if they have taken several assessments before the current assessment you may be able to predict/extrapolate the end score and ranking based on their position part way through the assessment.
+I suppose you could try to account for the distribution/curve of previous assessments of that user. For example, if they have taken several assessments before the current assessment you may be able to predict/extrapolate the end score and ranking based on their position part way through the assessment. Or instead of focusing on their own previous assessments, you could compare the progress of their assessment to that of other users who showed a similar pattern.
 
-Taking that a wild step further, why not treat each step of an assessment (for a giving topic) as a modeling and prediction opportunity by developing a deep learning model trained to the eventual outcome of the assessment. That way you could use the thousands (or millions) of assessments for that topic to generate a prediction such that you could stop the assessment once the prediction has reached a certain threshold of accuracy per the model. Just to be clear I am thinking of a different deep learning model (or potentially any predictive model) for each set of questions of a given topic in order. That wasn't very clear so ... one model based on five questions answered, then a model based on six questions answered, and so on.
+Taking that a crazy step further, why not treat each step of an assessment (for a giving topic) as a modeling and prediction opportunity by developing a deep learning model trained to the eventual outcome of the assessment. That way you could use the thousands (or millions) of assessments for that topic to generate a prediction such that you could stop the assessment once the prediction has reached a certain threshold of accuracy per the model. Just to be clear I am thinking of a different deep learning model (or potentially any predictive model) for each set of questions of a given topic in order. That wasn't very clear so ... one model based on five questions answered, then a model based on six questions answered, and so on.
 
 ### 4. How could we calculate the overall difficulty level of a particular topic? How might we then calculate a topic-level score for a single user?
 
-You may get close by determining what combination of topics tend to be taken by users. If a set of users are prone to take the same five topic assessments (and rarely other topics) then you could look to see if which topic was the most difficult to that group. As an example, business analysts may consistently take the data warehousing, data analytics/visualization, SQL, and Python assessments and often struggle score lower in the Python assessment. 
+You may get close by determining what combination of topics tend to be taken by users. If a set of users are prone to take the same five topic assessments (and rarely other topics) then you could look to see which topic was the most difficult to that group. As an example, business analysts may consistently take the data warehousing, data analytics/visualization, SQL, and Python assessments and often struggle or score lower in the Python assessment. In other examples, Python may be the easy assessment depending on the user. Segmenting users in this fashion may help for comparison purposes and make difficulty relative to user segments.
 
-I wonder if the frequency of the topic assessed is an indicator of the difficulty. Certainly the frequency relates to the popularity and the general demand/usefulness of the topic; as well as the newness of the topic (newer tools/tech/languages may be taken less frequently - following an adoption curve). Fortran or other older languages/technologies may be considered more difficult simply because less modern learning methods exist for them.
+I wonder if the frequency of the topic assessed is an indicator of the difficulty. Certainly the frequency relates to the popularity and the general demand/usefulness of the topic, as well as the newness of the topic (newer tools/tech/languages may be taken less frequently - following an adoption curve). Fortran or other older languages/technologies may be considered more difficult simply because less modern learning methods exist for them.
 
 How is "difficult" defined here?
 
