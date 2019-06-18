@@ -85,7 +85,7 @@ d <- user_assessment_sessions %>%
             , by = c("user_assessment_session_id", "user_interaction_id", "assessment_item_id", "assessment_id"))
 ```
 
-The skillIQ and roleIQ tests are addictive. I haven't used Pluralsight to learn and improve my technical skills yet, but I can see how the assessments would drive interaction and frequent improvement of subscribers. What a fun way to encourage personal development.
+The skillIQ and roleIQ tests are addictive. I haven't used Pluralsight to learn and improve my technical skills yet, but I can see how the assessments would drive interaction and frequent improvement of subscribers. What a fun way to encourage personal and professional development!
 
 # Data Exploration Questions
 
@@ -264,9 +264,9 @@ user_assessment_sessions %>%
 
 ### 5. How many times must a question be answered before it reaches its certainty floor? Does that number appear to be constant or does it vary depending on question or assessment?
 
-I think there are `r question_interactions %>% left_join(question_details, by = "item_content_id") %>% pull(assessment_item_id) %>% unique() %>% length()` questions in the data.
+There are `r question_interactions %>% left_join(question_details, by = "item_content_id") %>% pull(assessment_item_id) %>% unique() %>% length()` questions in the dataset. I expect the `rd` metric to again indicate the certainty floor. A quick look at the distribution of `rd` values shows that floor to be 30. However, many (71.1%) of the `assessment_item_id`s show all of their `rd` values to equal 30. Maybe that's because those are older questions that reached the floor (30) previous to this dataset.
 
-```{r q5_k, echo = F, warning = F, message = F, error = F, fig.height = 6}
+```{r q5_k, echo = F, warning = F, message = F, error = F, fig.height = 6, eval = F}
 question_interactions %>% 
   left_join(question_details, by = "item_content_id") %>% 
   pull(assessment_item_id) %>% 
@@ -274,7 +274,7 @@ question_interactions %>%
   length()
 ```
 
-```{r q5_density_all30vsNot, echo = F, warning = F, message = F, error = F, fig.height = 6}
+```{r q5_density_all30vsNot, echo = F, warning = F, message = F, error = F, fig.height = 6, eval = F}
 question_interactions %>% 
   left_join(question_details, by = "item_content_id") %>% 
   group_by(assessment_item_id) %>% 
@@ -288,8 +288,11 @@ question_interactions %>%
     facet_wrap(~all30, scales = "free")
 ```
 
-I think I'll have to look at all 724 of these using trelliscopejs. Should be an interesting view and help me see if roughly 10 question answers is sufficient or if it's more.
+We would really like to look at all `r question_interactions %>% left_join(question_details, by = "item_content_id") %>% pull(assessment_item_id) %>% unique() %>% length()` of these questions. We could examine much of the structure using trelliscopejs, a tool for interactively viewing a large collection of visualizations. The key opportunity when using trelliscope is that it allows for creation of a rich feature set that is then used to sort and filter through the data helping us see nuances, outliers, and important features of that data. 
 
+A brief description of the cognostics (features) is available by clicking on the "i" in the upper left corner. You can search for interesting `assessment_item_id`s by using the **Sort** and **Filter** buttons on the left hand side. To see those `assessment_item_id`s that have values of `rd` other than 30, click on the Filter button, then on the "All RD values = 30" pill, then enter "0" into the right side. This will reduce the total number of panels from 724 to 209. To see panels (plots) where at least two points are present (and thus a plot is created), remain clicked into the Filter button, then click on the "Number of Question Interactions" pill, then enter 2 on the left hand size of the range selection. This immediately removes all the blank panels (not plotted because only one observation exists) and reduces the number of panels from 209 to 180. Clicking on the Filter button again closes that window. You can sort or filter further to test hypotheses or explore the data sliced by `assessment_item_id`. Happy exploring!
+
+Also note that the plotting panel function can be ggplot or rbokeh based. Here I used bokeh so even within the plot some interactivity exists.
 
 ```{r q5_trelliscope1, echo = F, warning = F, message = F, error = F, fig.height = 6}
 rd_not_30_assessment_ids <- question_interactions %>% 
@@ -343,8 +346,11 @@ question_interactions %>%
                 self_contained = TRUE)
 ```
 
+Obviously a `rd` value of 30 is important and relevant, but I didn't find anything else that gave me sufficient confidence to answer this questions explicitly beyond saying there appears to be plenty of variation between questions. 
 
+Maybe I should have used a similar approach to examining the various assessments.
 
+---
 
 # More Involved/Open-ended Questions
 
@@ -361,12 +367,15 @@ Hopefully it reveals itself as often rendering an incorrect response. That may n
 ### 3. Given your response to number 2 in the Data Exploration Questions above, what is a method we could use to determine ideal points to stop a user’s assessment session (i.e. identify the right balance between certainty and burden on the user)?
 
 I suppose you could try to account for the distribution/curve of previous assessments of that user. For example, if they have taken several assessments before the current assessment you may be able to predict/extrapolate the end score and ranking based on their position part way through the assessment.
+
 Taking that a step further, why not treat each step of an assessment (for a giving topic) as a modeling and prediction opportunity by developing a deep learning model trained to the eventual outcome of the assessment. That way you could use the thousands (or millions) of assessments for that topic to generate a prediction such that you could stop the assessment once the prediction has reached a certain threshold of accuracy per the model. Just to be clear I am thinking of a different deep learning model (or potentially any predictive model) for each set of questions of a given topic in order. That wasn't very clear so ... one model based on five questions answered, then a model based on six questions answered, and so on.
 
 ### 4. How could we calculate the overall difficulty level of a particular topic? How might we then calculate a topic-level score for a single user?
 
 You may get close by determining what combination of topics tend to be taken by users. If a set of users are prone to take the same five topic assessments (and rarely other topics) then you could look to see if which topic was the most difficult to that group. As an example, business analysts may consistently take the data warehousing, data analytics/visualization, SQL, and Python assessments and often struggle score lower in the Python assessment. 
+
 I wonder if the frequency of the topic assessed is an indicator of the difficulty. Certainly the frequency relates to the popularity and the general demand/usefulness of the topic; as well as the newness of the topic (newer tools/tech/languages may be taken less frequently - following an adoption curve). Fortran or other older languages/technologies may be considered more difficult simply because less modern learning methods exist for them.
+
 How is "difficult" defined here?
 
 
