@@ -21,14 +21,13 @@ knitr::opts_chunk$set(
 library(DBI)
 library(RSQLite)
 library(lubridate)
-library(stopwords)
 library(tidyverse)
 library(trelliscopejs)
-library(wordcloud)
 library(HSPSUtils) # install_github("HSPS-DataScience/HSPSUtils")
                    # devtools::update_packages("HSPSUtils")
 library(rbokeh)
 library(ggpubr)
+library(matlab)
 ```
 
 
@@ -41,18 +40,18 @@ question_details <- DBI::dbReadTable(con, "question_details") %>%
   as_tibble() %>%
   mutate(date_created = as.POSIXct(as.numeric(date_created), origin = '1970-01-01', tz = "GMT"))
 
-question_interactions <- DBI::dbReadTable(con, "question_interactions") %>% 
+question_interactions <- dbReadTable(con, "question_interactions") %>% 
   as_tibble() %>%
   mutate(date_created = ymd_hms(date_created))
 
-user_assessment_sessions <- DBI::dbReadTable(con, "user_assessment_sessions") %>% 
+user_assessment_sessions <- dbReadTable(con, "user_assessment_sessions") %>% 
   as_tibble() %>%
   mutate(
     date_created = ymd_hms(date_created),
     date_modified = ymd_hms(date_modified)
   )
 
-user_interactions <- DBI::dbReadTable(con, "user_interactions") %>% 
+user_interactions <- dbReadTable(con, "user_interactions") %>% 
   as_tibble() %>%
   mutate(date_created = ymd_hms(date_created))
 
@@ -95,6 +94,8 @@ The skillIQ and roleIQ tests are addictive. I haven't used Pluralsight to learn 
 
 ###### Overall Ranking Metrics
 
+Using the `user_assessment_sessions` dataset we can see the distribution of the various metrics for the `r user_assessment_sessions %>% nrow()` user sessions.
+
 ```{r q1_overall, echo = F, warning = F, message = F, error = F}
 # d %>% 
 #   group_by(user_assessment_id, user_id, user_assessment_session_id) %>%
@@ -110,6 +111,8 @@ user_assessment_sessions %>%
     facet_wrap(~ key, scales = "free") +
     theme_bw()
 ```
+
+A comparison of the assessments is shown below. The consistency initially surprised me, but it makes sense that the distribution across the assessments varies mildly given the need to provide a standardized evaluation process agnostic to the actual assessment.
 
 ```{r q1_overall_byAssessment, echo = F, warning = F, message = F, error = F}
 # d %>% 
@@ -130,8 +133,9 @@ user_assessment_sessions %>%
 ```
 
 
-
 ###### Interaction Ranking Metrics
+
+A look at the distributions of the `user_interactions` dataset again shows some variability between assessments (which may be important if I knew more about the methodology), but no more than expected.
 
 ```{r q1_interactions, echo = F, warning = F, message = F, error = F}
 user_interactions %>% 
@@ -152,21 +156,29 @@ user_interactions %>%
 
 ###### Question Ranking Metrics by Assessment
 
+The distributions of `rd` and `client_elapsed_time` are heavily skewed so I took the log (base 10) of `client_elapsed_time` and dropped `rd` altogether. Later (question 5) we see that the question based rd value is generally 30 for the majority of the question interactions. I also removed the records with outliers in the `client_elapsed_time`; values > 99th percentile = 147260.3 and values < 0.
+
+Per the plot we see that the distributions of `client_elapsed_time` for the assessments are very similar, though React is slightly shifted to the right of the other three assessments. That may be significant given it's presented on the log scale. The distributions of the `ranking` metric vary in a noisy way but still follow the same general structure.
+
 ```{r q1b_overall_byAssessment, echo = F, warning = F, message = F, error = F}
-# question_interactions %>%
-#   select(user_assessment_session_id, ranking, rd, result, client_elapsed_time) %>%
-#   left_join(user_assessment_sessions %>% select(name, user_assessment_session_id), 
-#             by = "user_assessment_session_id") %>%
-#   select(-user_assessment_session_id) %>%
-#   gather(,,-name) %>%
-#   ggplot(aes(x = value, color = name)) +
-#     geom_density() +
-#     facet_wrap(~ key, scales = "free") +
-#     labs(x = "", color = "Assessment") +
-#     theme_bw()
-
+question_interactions %>%
+  select(user_assessment_session_id, ranking, client_elapsed_time) %>%
+  left_join(user_assessment_sessions %>% select(user_assessment_session_id, name),
+            by = "user_assessment_session_id") %>%
+  select(-user_assessment_session_id) %>%
+  filter(
+    client_elapsed_time < 1472560.3,
+    client_elapsed_time > 0
+  ) %>%
+  mutate(client_elapsed_time_log = log10(client_elapsed_time)) %>%
+  select(-client_elapsed_time) %>%
+  gather(,,-name) %>%
+  ggplot(aes(x = value, color = name)) +
+    geom_density() +
+    facet_wrap(~ key, scales = "free") +
+    labs(x = "", color = "Assessment") +
+    theme_bw()
 ```
-
 
 
 ### 2. How does it appear the algorithm determines when a user’s assessment session is complete?
@@ -209,7 +221,7 @@ q2data %>%
     labs(x = "Time of Question", y = "")
 ```
 
-A closer look at the distribution of the minimum `rd` values of each assessment's interaction shows that a simple threshold of 80 drives the stopping rule. Over 75% of the sessions were stopped at a `rd` value below and very near 80. While that seems like an arbitrary value to me, I am sure there was some empirical and theoretical studies performed to determine that threshold. Also 75% may seem low, but that includes all sessions, even those that were stopped prematurely by the user (as discussed in #3).
+A closer look at the distribution of the minimum `rd` values of each assessment's interaction shows that a simple threshold of 80 drives the stopping rule. Over 75% of the sessions were stopped at a `rd` value below and very near 80. While that seems like an arbitrary value to me, I am sure there was some empirical and theoretical studies performed to determine that threshold. Also 75% may seem low, but that includes all sessions, even those that were stopped prematurely by the user (as discussed in question 3).
 
 
 ```{r q2_quantiles, echo = F, warning = F, message = F, error = F, fig.height = 6}
@@ -223,50 +235,94 @@ user_interactions %>%
 
 ### 3. Which of the assessments has the highest and lowest dropout rates, respectively?
 
+Assuming the threshold for completing the assessment is 80, then the overall dropout rate is around 25% (1608/6678 = 24.07%). The dropout rates for each assessment vary substantially, including React at 34.9%, Illustrator at 32.1%, Python at 21.8%, and Javascript at 21.0%.
 
-```{r q3_scatterplot, echo = F, warning = F, message = F, error = F, fig.height = 6}
+```{r q3_rd_threshold_table, echo = F, warning = F, message = F, error = F, eval = F}
 user_assessment_sessions %>% 
-  ggplot(aes(x = n_questions_answered, y = rd)) + 
-    geom_point(alpha = 0.1) + 
-    theme_bw()
-```
-
-```{r q3_rd_threshold_table, echo = F, warning = F, message = F, error = F, fig.height = 6}
-user_assessment_sessions %>% 
-  mutate(rd_threshold = if_else(rd <= 80, 1, 0)) %>% 
+  mutate(rd_threshold = if_else(rd <= 80, "RD Threshold Met (RD <= 80)", "RD Threshold Unmet (RD > 80)")) %>% 
   group_by(rd_threshold) %>% 
   summarise(n())
 ```
 
-```{r q3_rd_threshold_numQs_table, echo = F, warning = F, message = F, error = F, fig.height = 6}
+
+```{r q3_rd_threshold_table2, echo = F, warning = F, message = F, error = F, eval = F}
 user_assessment_sessions %>% 
-  mutate(rd_threshold = if_else(rd <= 80, 1, 0)) %>% 
-  group_by(rd_threshold, n_questions_answered) %>% 
+  mutate(rd_threshold = if_else(rd <= 80, "RD Threshold Met (RD <= 80)", "RD Threshold Unmet (RD > 80)")) %>% 
+  group_by(name, rd_threshold) %>% 
   summarise(n())
 ```
 
-```{r q3_rd_distn_vs_numQs, echo = F, warning = F, message = F, error = F, fig.height = 6}
+
+```{r q3_rd_distn_vs_numQs, echo = F, warning = F, message = F, error = F, fig.height = 4}
 user_assessment_sessions %>% 
-  mutate(rd_threshold = if_else(rd <= 80, 1, 0)) %>% 
-  filter(
-    #rd_threshold == 0, 
-    n_questions_answered < 30
-  ) %>% 
-  ggplot(aes(x = rd)) + 
+  mutate(rd_threshold = if_else(rd <= 80, "RD Threshold Met (RD <= 80)", "RD Threshold Unmet (RD > 80)")) %>% 
+  ggplot(aes(x = n_questions_answered, color = name)) + 
     geom_density() + 
-    facet_grid(n_questions_answered ~ rd_threshold, scales = "free_y") + 
-    theme_bw() + 
-    geom_vline(aes(xintercept = 80), color = "red")
+    facet_wrap( ~ rd_threshold, scales = "free_y") + 
+    theme_bw() +
+    labs(x = "Number of Questions Answered", color = "Assessment")
 ```
 
+While the plot below doesn't quite tell the full story it does help illustrate that it generally takes 18-20 questions answered to obtain the `rd` threshold of 80. There is a subtle negative slope to the blue points indicating that the users who dropout early (< 10 questions) were likely incorrectly answering the majority of the few questions they actually answered. A closer look using an approach similar to how what I did in question 5 may allow us to test that hypothesis.
+
+
+```{r q3_scatter_rdVSdisplayscore, echo = F, warning = F, message = F, error = F, fig.height = 4}
+user_assessment_sessions %>% 
+  ggplot(aes(x = rd, y = display_score, color = n_questions_answered)) + 
+    geom_point(alpha = 0.25) + 
+    theme_bw() + 
+    facet_wrap(~ name) + 
+    scale_color_gradientn(colors = matlab::jet.colors(100)) +
+  labs(x = "RD", y = "Display Score", color = "Number of\nQuestions\nAnswered")
+```
+
+Javascript has some unusually high number of questions answered at the highest end of the `display_score` that still don't quite result in a `rd` value dropping below the threshold. That may be something worth examining in more detail.
+
+
 ### 4. Is there significant variance in question difficulty by topic within a given assessment?
+
+To measure question difficulty I chose to calculate how often (percent) a user answered a given question correctly. The density plots below show the range of question difficulty for each Assessment:Topic combination. Clearly the range of question difficulty varies greatly across the Assessment:Topic combinations. Some topics, like *Python: Scalars and Operators* and *Illustrator: Transforming and Managing Objects*, span nearly the entire range of values showing both easy (questions frequently answered correctly) and difficult questions. Other topics, like *React: Forms* and *Javascript: Exceptions*, have questions that are generally answered correctly the same percent of the time. For such topics this lack of variability may make it hard to differentiate scores and rankings when compared with topics containing more variety in the difficulty of questions.
+
+```{r q4_densityplot, echo = F, warning = F, message = F, error = F, fig.height = 7}
+question_interactions %>% 
+  left_join(question_details, 
+            by = "item_content_id") %>% 
+  left_join(user_assessment_sessions %>% select(user_assessment_session_id, assessment_id, name), 
+            by = c("user_assessment_session_id", "assessment_id")) %>%
+  group_by(name, topic_name, assessment_item_id, topic_name) %>%
+  summarise(percent_correct = 100*sum(result == "Correct") / length(result)) %>%
+  mutate(label = paste(name, topic_name, sep = ": ")) %>%
+  ggplot(aes(x = percent_correct)) +
+    geom_density() +
+    theme_bw() +
+    scale_x_continuous(limits = c(0,100)) +
+    facet_wrap(~ label, scales = "free_y", ncol = 4) +
+    labs(x = "Percent Question was Answered Correctly", y = "Number of User Assessments") +
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+```
+
+The range (max - min) of question difficulty (percent correctly answered) for each Assessment:Topic combination is listed below from lowest range to highest. I didn't check the frequency of the questions or of the topics which would affect both the percent correctly answered and possibly the range of difficulty.
+
+```{r q4_table, echo = F, warning = F, message = F, error = F}
+question_interactions %>% 
+  left_join(question_details, 
+            by = "item_content_id") %>% 
+  left_join(user_assessment_sessions %>% select(user_assessment_session_id, assessment_id, name), 
+            by = c("user_assessment_session_id", "assessment_id")) %>%
+  group_by(name, topic_name, assessment_item_id, topic_name) %>%
+  summarise(percent_correct = 100*sum(result == "Correct") / length(result)) %>%
+  mutate(label = paste(name, topic_name, sep = ": ")) %>% 
+  group_by(label) %>% 
+  summarise(range = max(percent_correct)-min(percent_correct)) %>%
+  arrange(range)
+```
 
 
 ### 5. How many times must a question be answered before it reaches its certainty floor? Does that number appear to be constant or does it vary depending on question or assessment?
 
 There are `r question_interactions %>% left_join(question_details, by = "item_content_id") %>% pull(assessment_item_id) %>% unique() %>% length()` questions in the dataset. I expect the `rd` metric to again indicate the certainty floor. A quick look at the distribution of `rd` values shows that floor to be 30. However, many (71.1%) of the `assessment_item_id`s show all of their `rd` values to equal 30. Maybe that's because those are older questions that reached the floor (30) previous to this dataset.
 
-```{r q5_k, echo = F, warning = F, message = F, error = F, fig.height = 6, eval = F}
+```{r q5_k, echo = F, warning = F, message = F, error = F, eval = F}
 question_interactions %>% 
   left_join(question_details, by = "item_content_id") %>% 
   pull(assessment_item_id) %>% 
@@ -346,9 +402,9 @@ question_interactions %>%
                 self_contained = TRUE)
 ```
 
-Obviously a `rd` value of 30 is important and relevant, but I didn't find anything else that gave me sufficient confidence to answer this questions explicitly beyond saying there appears to be plenty of variation between questions. 
+Obviously a `rd` value of 30 is important and relevant, but I didn't find anything else that gave me sufficient confidence to answer this question explicitly beyond saying there appears to be plenty of variation between questions. 
 
-Maybe I should have used a similar approach to examining the various assessments.
+Maybe I should have used a similar approach (trelliscope) to examen the various assessments in the previous questions.
 
 ---
 
@@ -366,9 +422,11 @@ Hopefully it reveals itself as often rendering an incorrect response. That may n
 
 ### 3. Given your response to number 2 in the Data Exploration Questions above, what is a method we could use to determine ideal points to stop a user’s assessment session (i.e. identify the right balance between certainty and burden on the user)?
 
+You could compare the `display_score` (and ranking) to the changes/decreases in `rd` as you approach the rd threshold. Some rules or a model may be applied to allow you to occasionally shave off 3-5 questions per assessment if you sufficiently understood the relationship between `display_score` and `rd` at the late stage of the assessment.
+
 I suppose you could try to account for the distribution/curve of previous assessments of that user. For example, if they have taken several assessments before the current assessment you may be able to predict/extrapolate the end score and ranking based on their position part way through the assessment.
 
-Taking that a step further, why not treat each step of an assessment (for a giving topic) as a modeling and prediction opportunity by developing a deep learning model trained to the eventual outcome of the assessment. That way you could use the thousands (or millions) of assessments for that topic to generate a prediction such that you could stop the assessment once the prediction has reached a certain threshold of accuracy per the model. Just to be clear I am thinking of a different deep learning model (or potentially any predictive model) for each set of questions of a given topic in order. That wasn't very clear so ... one model based on five questions answered, then a model based on six questions answered, and so on.
+Taking that a wild step further, why not treat each step of an assessment (for a giving topic) as a modeling and prediction opportunity by developing a deep learning model trained to the eventual outcome of the assessment. That way you could use the thousands (or millions) of assessments for that topic to generate a prediction such that you could stop the assessment once the prediction has reached a certain threshold of accuracy per the model. Just to be clear I am thinking of a different deep learning model (or potentially any predictive model) for each set of questions of a given topic in order. That wasn't very clear so ... one model based on five questions answered, then a model based on six questions answered, and so on.
 
 ### 4. How could we calculate the overall difficulty level of a particular topic? How might we then calculate a topic-level score for a single user?
 
